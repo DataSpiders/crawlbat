@@ -51,8 +51,21 @@ type MasterService struct {
 }
 
 func (svc *MasterService) Start() {
-	// gRPC server is now started earlier in main.go to avoid race conditions
-	// No need to start it here anymore
+	// BUGFIX (crawlab-ng): this used to say the gRPC server was "started
+	// earlier in main.go to avoid race conditions", but no code anywhere in
+	// this codebase actually calls GrpcServer.Start() (grep for
+	// "GetGrpcServer()." across the repo — this was the only construction
+	// site, via newMasterService(), and Init() only registers the service
+	// handlers, it never listens). The result: the gRPC server object
+	// exists and is registered, but never binds a socket, so
+	// task_scheduler/task_handler can never reach it and every task stays
+	// Pending forever. Starting it here, before anything that depends on
+	// it (health service, task scheduler, task handler all read
+	// svc.server), is the safest place given the constructor already fully
+	// built it in newMasterService().
+	if err := svc.server.Start(); err != nil {
+		panic(err)
+	}
 
 	// register to db
 	if err := svc.Register(); err != nil {
